@@ -10,6 +10,8 @@ import json
 import os
 import re
 import sys
+import threading
+import time
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -20,6 +22,7 @@ from geopy.geocoders import Nominatim
 from rich import box
 from rich.console import Console
 from rich.panel import Panel
+from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 from rich.prompt import IntPrompt, Prompt
 from rich.rule import Rule
 from rich.table import Table
@@ -623,19 +626,58 @@ def main() -> None:
         console.print()
 
     # ── fetch ──────────────────────────────────────────────────────────────────
-    with console.status("[bold cyan]Pesquisando no Google Maps…[/bold cyan]", spinner="dots"):
+    wait_secs = max(30, results // 2)
+    result_holder: dict = {}
+
+    def _run_search() -> None:
         try:
-            clinics = search_clinics(
+            result_holder["clinics"] = search_clinics(
                 login, password,
                 keyword, location, args.language,
                 results, coordinates, radius,
             )
-        except requests.exceptions.HTTPError as exc:
+        except Exception as exc:
+            result_holder["error"] = exc
+
+    search_thread = threading.Thread(target=_run_search, daemon=True)
+    search_thread.start()
+
+    try:
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[bold cyan]Pesquisando no Google Maps…[/bold cyan]"),
+            BarColumn(bar_width=40),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TimeElapsedColumn(),
+            console=console,
+            transient=False,
+        ) as progress:
+            task_id = progress.add_task("search", total=wait_secs)
+            tick = 0.25
+            elapsed = 0.0
+            while search_thread.is_alive():
+                time.sleep(tick)
+                elapsed += tick
+                progress.update(task_id, completed=min(elapsed, wait_secs * 0.99))
+            progress.update(task_id, completed=wait_secs)
+    except KeyboardInterrupt:
+        console.print("\n\n[bold yellow]⚠ Busca cancelada pelo usuário.[/bold yellow]\n")
+        sys.exit(0)
+
+    if "error" in result_holder:
+        exc = result_holder["error"]
+        if isinstance(exc, requests.exceptions.HTTPError):
             console.print(f"\n[bold red]✗ Erro HTTP:[/bold red] {exc}")
-            sys.exit(1)
-        except requests.exceptions.Timeout:
-            console.print("\n[bold red]✗ Tempo esgotado. Verifique sua conexão e tente novamente.[/bold red]")
-            sys.exit(1)
+        elif isinstance(exc, requests.exceptions.Timeout):
+            console.print(
+                "\n[bold red]✗ Tempo esgotado.[/bold red] "
+                "Tente reduzir o número de resultados ou verifique sua conexão."
+            )
+        else:
+            console.print(f"\n[bold red]✗ Erro inesperado:[/bold red] {exc}")
+        sys.exit(1)
+
+    clinics = result_holder.get("clinics", [])
 
     # ── results ────────────────────────────────────────────────────────────────
     display_results(clinics)

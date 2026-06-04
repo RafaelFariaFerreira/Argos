@@ -1,0 +1,12 @@
+# secrets
+.env
+
+# virtual environment
+.venv/
+
+# python
+__pycache__/
+*.py[cod]
+
+# output files
+resultados_*.csv

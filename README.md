@@ -1,103 +1,77 @@
-<div align="center">
+<p align="center">
+  <img src="docs/assets/cover.svg" alt="Argos — Google Maps market intelligence, straight from your terminal" width="100%">
+</p>
 
-```
- █████╗ ██████╗  ██████╗  ██████╗ ███████╗
-██╔══██╗██╔══██╗██╔════╝ ██╔═══██╗██╔════╝
-███████║██████╔╝██║  ███╗██║   ██║███████╗
-██╔══██║██╔══██╗██║   ██║██║   ██║╚════██║
-██║  ██║██║  ██║╚██████╔╝╚██████╔╝███████║
-╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝  ╚═════╝ ╚══════╝
-```
+<p align="center">
+  <img src="https://img.shields.io/badge/python-3.10%2B-F5B841?style=flat-square&labelColor=0B1020" alt="Python 3.10+">
+  <img src="https://img.shields.io/badge/data-DataForSEO-4CC9F0?style=flat-square&labelColor=0B1020" alt="DataForSEO">
+  <img src="https://img.shields.io/badge/output-CSV-5BD38C?style=flat-square&labelColor=0B1020" alt="CSV output">
+  <img src="https://img.shields.io/badge/license-MIT-8A94A8?style=flat-square&labelColor=0B1020" alt="MIT license">
+</p>
 
-**◉ ◉ ◉ ◉ ◉ &nbsp; Google Maps Market Intelligence &nbsp; ◉ ◉ ◉ ◉ ◉**
+**Argos** is a command-line tool that turns a Google Maps search into a clean, structured lead list. Give it a business type and a place — a state, a city, or a single neighborhood — and it returns every matching business with address, phone, rating, website, hours and coordinates, shown in the terminal and exported to a CSV you can open in a spreadsheet or import anywhere.
 
-*The all-seeing eye of your market*
+It works for any kind of business: gyms, restaurants, clinics, law firms, pet shops.
 
-![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python&logoColor=white)
-![API](https://img.shields.io/badge/API-DataForSEO-4CAF50?logo=google&logoColor=white)
-![License](https://img.shields.io/badge/License-MIT-yellow)
-![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey)
+The name comes from *Argos Panoptes*, the hundred-eyed giant of Greek mythology who never closed all his eyes at once.
 
-</div>
+<p align="center">
+  <img src="docs/assets/terminal.svg" alt="Argos running in a terminal: search summary, progress bar and a results table" width="100%">
+  <br>
+  <sub>Illustrative output with sample data.</sub>
+</p>
 
----
+## Why
 
-## About
+Prospecting local businesses by hand means opening Google Maps, copying names and phone numbers one by one, and cleaning everything up in a spreadsheet afterwards. Argos collapses that into one command:
 
-In Greek mythology, **Argos Panoptes** was a primordial giant cursed with a hundred eyes — never sleeping simultaneously, watching everything, missing nothing.
+- **One search, up to 700 businesses.** Pick how deep to go.
+- **Neighborhood precision.** Name a neighborhood and a radius; Argos finds its coordinates for you.
+- **Data that is already clean.** One row per business, one fact per column, with addresses split into street, complement, city, state and postal code.
+- **No setup friction.** On first run it asks for your API credentials and saves them.
 
-**Argos** brings that same tireless vigilance to market research. It extracts structured business intelligence from Google Maps for any type of business — clinics, restaurants, gyms, law firms — and exports results to CSV, ready for analysis or CRM import.
+## How it works
 
----
+<p align="center">
+  <img src="docs/assets/how-it-works.svg" alt="Pipeline: input, optional geocoding, search, normalize, deliver" width="100%">
+</p>
 
-## Features
+1. **Input** — search parameters come from CLI flags or from an interactive prompt.
+2. **Geocode** *(only when a neighborhood is given)* — the neighborhood name is resolved to latitude and longitude through OpenStreetMap's Nominatim.
+3. **Search** — a single live request to the [DataForSEO](https://dataforseo.com) Google Maps API returns the listings.
+4. **Normalize** — each listing is parsed: address components, phone parts, rating bucket, opening hours.
+5. **Deliver** — results are rendered as a table in the terminal and written to CSV.
 
-- **Targeted search** — search by city, state, or a specific neighborhood (geocoded automatically via OpenStreetMap)
-- **Adjustable depth** — fetch anywhere from 1 to 700 results per search
-- **Rich terminal UI** — color-coded tables, spinners, and panels (inspired by theHarvester)
-- **First-run setup** — if no credentials are found, Argos walks you through configuration interactively
-- **Structured CSV export** — results saved with parsed address components, split phone fields, rating, review count, website, coordinates, and operating hours — ready for spreadsheets, databases, or CRM import
+## Quick start
 
----
-
-## Requirements
-
-- Python 3.10+
-- A [DataForSEO](https://dataforseo.com) account with API credentials
-
----
-
-## Installation
+**Requirements:** Python 3.10+ and a [DataForSEO](https://dataforseo.com) account with API credentials.
 
 ```bash
-# 1. Clone the repository
-git clone https://github.com/your-username/argos.git
-cd argos
+git clone https://github.com/RafaelFariaFerreira/Argos.git
+cd Argos
 
-# 2. Create and activate a virtual environment
 python3 -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
-
-# 3. Install dependencies
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
+
+python argos.py
 ```
 
----
-
-## Configuration
-
-Argos will detect missing credentials on first run and walk you through setup interactively:
-
-```
-⚙  First-time Setup
-──────────────────────────────────────────────────
-  Login (email): your@email.com
-  Password: ********
-
-  ✓ Credentials saved to .env
-```
-
-To configure manually, create a `.env` file in the project root:
+On the first run Argos asks for your DataForSEO login and password and stores them in a local `.env` file (already git-ignored). To set them by hand instead:
 
 ```env
 DATAFORSEO_LOGIN=your@email.com
 DATAFORSEO_PASSWORD=your_password
 ```
 
-Get your credentials at [app.dataforseo.com/api-access](https://app.dataforseo.com/api-access).
-
----
+Credentials are available at [app.dataforseo.com/api-access](https://app.dataforseo.com/api-access).
 
 ## Usage
 
-```bash
-python argos.py [OPTIONS]
-```
-
-Running without arguments launches **interactive mode**, which prompts for all search parameters:
+Run with no search flags and Argos asks for everything interactively:
 
 ```
-  Categoria / termo de busca: clínicas de dermatologia estética
+  Tipo de empresa / termo de busca (ex.: academias): academias
   Estado: São Paulo
   Cidade: São Paulo
   Bairro (opcional — Enter para pular): Pinheiros
@@ -105,98 +79,58 @@ Running without arguments launches **interactive mode**, which prompts for all s
   Número de resultados (máximo: 700): 50
 ```
 
-### CLI Options
+Pass `--keyword` (plus any other flag) and it runs straight through, which is what you want for scripts and repeated searches.
 
-For scripted or repeated use, all parameters can be passed as flags:
+### Two ways to define the area
 
-| Option | Description |
-|---|---|
-| `--keyword` | Search term |
-| `--location` | DataForSEO location string (e.g. `'Sao Paulo,State of Sao Paulo,Brazil'`) |
-| `--language` | Search language (default: `Portuguese`) |
-| `--results` | Number of results to fetch (1–700) |
-| `--neighborhood` | Neighborhood name — geocoded automatically via OpenStreetMap |
-| `--radius` | Search radius in km when using `--neighborhood` (default: `3`) |
-| `--output` | CSV output path (default: `resultados_<timestamp>.csv`) |
-| `--no-export` | Print results only, skip CSV export |
+<p align="center">
+  <img src="docs/assets/search-modes.svg" alt="Two search modes: a whole city or state, or a radius around a neighborhood" width="100%">
+</p>
+
+| Mode | Flags | Best for |
+|---|---|---|
+| **Whole city or state** | `--location` | Sizing a market, building a broad list |
+| **Neighborhood radius** | `--neighborhood` + `--radius` | Hyper-local prospecting, territory planning |
+
+### Options
+
+| Option | Description | Default |
+|---|---|---|
+| `--keyword` | Type of business to search for | required |
+| `--location` | City or state, in DataForSEO format | `Sao Paulo,State of Sao Paulo,Brazil` |
+| `--neighborhood` | Neighborhood name, geocoded automatically | — |
+| `--radius` | Radius in km around the neighborhood | `3` |
+| `--results` | How many results to fetch (1–700) | `20` |
+| `--language` | Search language | `Portuguese` |
+| `--output` | CSV file path | `resultados_<timestamp>.csv` |
+| `--no-export` | Show results only, skip the CSV | off |
 
 ### Examples
 
 ```bash
-# Default search — aesthetic dermatology clinics in São Paulo
-python argos.py
+# Gyms within 3 km of Pinheiros, São Paulo
+python argos.py --keyword "academias" --neighborhood "Pinheiros"
 
-# Search in a specific neighborhood
-python argos.py --neighborhood "Pinheiros"
+# Tighter radius
+python argos.py --keyword "academias" --neighborhood "Vila Mariana" --radius 1
 
-# Narrow the radius to 1 km
-python argos.py --neighborhood "Vila Mariana" --radius 1
-
-# Different city + neighborhood
-python argos.py \
+# A neighborhood in another city
+python argos.py --keyword "restaurantes" \
   --location "Rio de Janeiro,State of Rio de Janeiro,Brazil" \
   --neighborhood "Ipanema"
 
-# Fetch 100 results in a different city
-python argos.py \
-  --location "Rio de Janeiro,State of Rio de Janeiro,Brazil" \
-  --results 100
+# 100 results across a whole city, saved to a named file
+python argos.py --keyword "pet shops" \
+  --location "Curitiba,State of Parana,Brazil" \
+  --results 100 --output petshops_curitiba.csv
 
-# Different keyword with more results
-python argos.py --keyword "clínica de odontologia estética" --results 50
-
-# Save to a specific file
-python argos.py --output clinicas_sp.csv
-
-# Print results only — no CSV export
-python argos.py --no-export
+# Just look, don't save
+python argos.py --keyword "escritórios de advocacia" --no-export
 ```
 
----
+### Location format
 
-## Output
-
-Results are printed as a color-coded table in the terminal and saved to a CSV file.
-
-### CSV columns
-
-| Column | Description |
-|---|---|
-| `Name` | Business name |
-| `Address / Address 1` | Street and number |
-| `Address / Address 2` | Complement / neighborhood |
-| `Address / City` | City |
-| `Address / State` | State abbreviation |
-| `Address / Country` | Always `Brazil` |
-| `Address / Post Code` | ZIP code (CEP) |
-| `Domain Name / Link URL` | Website domain |
-| `Nota Google` | Rating mapped to `RATING_3`, `RATING_4`, or `RATING_5` |
-| `N Avaliações Google` | Number of Google reviews |
-| `Especialidade` | Inferred from category (`DERMATOLOGIA_ESTETICA`, `ODONTOLOGIA_ESTETICA`, `OUTRO`) |
-| `Whatsapp / Primary Phone *` | Calling code, country code, and number parsed from phone |
-| `Id` | Generated UUID v4 |
-| `Creation date` / `Last update` | Timestamp of the scrape run |
-
-### Extra columns (scraper-specific)
-
-| Column | Description |
-|---|---|
-| `Categoria` | Raw business category from Google Maps |
-| `Horários` | Formatted operating hours |
-| `Latitude` | Geographic latitude |
-| `Longitude` | Geographic longitude |
-
----
-
-## Location Format
-
-The `--location` value must match DataForSEO's location database. The format for Brazilian cities is:
-
-```
-City,State of StateNameWithoutAccents,Brazil
-```
-
-Common examples:
+In interactive mode you just type the city and state as you normally would (`São Paulo`, `Paraná` or `PR`); Argos converts them to the format below. With flags, `--location` must match a name in DataForSEO's location database. For Brazil the pattern is `City,State of <state name without accents>,Brazil`:
 
 ```
 Sao Paulo,State of Sao Paulo,Brazil
@@ -204,21 +138,47 @@ Rio de Janeiro,State of Rio de Janeiro,Brazil
 Belo Horizonte,State of Minas Gerais,Brazil
 Brasilia,Federal District,Brazil
 Curitiba,State of Parana,Brazil
-Porto Alegre,State of Rio Grande do Sul,Brazil
-Salvador,State of Bahia,Brazil
-Fortaleza,State of Ceara,Brazil
-Recife,State of Pernambuco,Brazil
-Manaus,State of Amazonas,Brazil
 ```
 
-To search an entire state:
+Drop the city to search an entire state: `State of Sao Paulo,Brazil`.
 
-```
-State of Sao Paulo,Brazil
-```
+## Output
 
----
+Every listing is reshaped from the free-form text Google Maps shows into separate, typed fields.
+
+<p align="center">
+  <img src="docs/assets/data-transform.svg" alt="A raw Google Maps listing on the left is parsed into separate CSV fields on the right" width="100%">
+</p>
+
+The CSV has 15 columns:
+
+| Column | Content |
+|---|---|
+| `Name` | Business name |
+| `Category` | Category as shown on Google Maps |
+| `Phone` | Phone number |
+| `Website` | Website domain |
+| `Rating` | Average Google rating |
+| `Reviews` | Number of Google reviews |
+| `Address` | Full address line, as shown on Google Maps |
+| `Street` · `Complement` | Street and number · complement or neighborhood |
+| `City` · `State` · `Postal Code` | Parsed from the address line |
+| `Hours` | Opening hours, e.g. `Seg: 08:00-18:00 \| Ter: 08:00-18:00` |
+| `Latitude` · `Longitude` | Coordinates |
+
+Address splitting expects the Brazilian format (`street - complement, city - UF, CEP`). For anything else, the full line is still in `Address`.
+
+## Built with
+
+| | |
+|---|---|
+| [DataForSEO](https://dataforseo.com) | Google Maps search results |
+| [geopy](https://github.com/geopy/geopy) + OpenStreetMap Nominatim | Neighborhood geocoding |
+| [Rich](https://github.com/Textualize/rich) | Terminal tables, prompts and progress |
+| [Requests](https://github.com/psf/requests) · [python-dotenv](https://github.com/theskumar/python-dotenv) | HTTP and credential loading |
+
+The whole tool is a single file, [`argos.py`](argos.py).
 
 ## License
 
-MIT — see [LICENSE](LICENSE) for details.
+MIT — see [LICENSE](LICENSE).

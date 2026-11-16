@@ -12,7 +12,7 @@ import re
 import sys
 import threading
 import time
-import uuid
+import unicodedata
 from datetime import datetime
 from pathlib import Path
 
@@ -31,7 +31,6 @@ from rich.table import Table
 
 VERSION = "1.0.0"
 API_URL = "https://api.dataforseo.com/v3/serp/google/maps/live/advanced"
-PHONE_COUNTRY_CODES = {"+55": "BR", "+1": "US", "+44": "GB", "+33": "FR", "+34": "ES"}
 
 LOGO = """
  █████╗ ██████╗  ██████╗  ██████╗ ███████╗
@@ -41,50 +40,20 @@ LOGO = """
 ██║  ██║██║  ██║╚██████╔╝╚██████╔╝███████║
 ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝  ╚═════╝ ╚══════╝"""
 
-TWENTY_CRM_COLUMNS = [
-    "Account Owner (ID)",
-    "Address / Address 1",
-    "Address / Address 2",
-    "Address / City",
-    "Address / State",
-    "Address / Country",
-    "Address / Post Code",
-    "ARR / Amount",
-    "ARR / Currency",
-    "Creation date",
-    "Domain Name / Link URL",
-    "Domain Name / Link Label",
-    "Domain Name / Secondary Links",
-    "Employees",
-    "Especialidade",
-    "Fit Markmedi",
-    "Google Business Profile / Link URL",
-    "Google Business Profile / Link Label",
-    "Google Business Profile / Secondary Links",
-    "Id",
-    "ICP",
-    "Instagram / Link URL",
-    "Instagram / Link Label",
-    "Instagram / Secondary Links",
-    "Linkedin / Link URL",
-    "Linkedin / Link Label",
-    "Linkedin / Secondary Links",
+CSV_COLUMNS = [
     "Name",
-    "N Avaliações Google",
-    "Nota Google",
-    "Próxima Ação SS",
-    "Próximo contato",
-    "Score",
-    "Status Call",
-    "Tipo de operação",
-    "Last update",
-    "Whatsapp / Primary Phone Calling Code",
-    "Whatsapp / Primary Phone Country Code",
-    "Whatsapp / Primary Phone Number",
-    "Whatsapp / Additional Phones",
-    # Extra columns from scraped data
-    "Categoria",
-    "Horários",
+    "Category",
+    "Phone",
+    "Website",
+    "Rating",
+    "Reviews",
+    "Address",
+    "Street",
+    "Complement",
+    "City",
+    "State",
+    "Postal Code",
+    "Hours",
     "Latitude",
     "Longitude",
 ]
@@ -170,7 +139,7 @@ def geocode_neighborhood(neighborhood: str, city: str) -> tuple[float, float]:
 # ── search ─────────────────────────────────────────────────────────────────────
 
 
-def search_clinics(
+def search_businesses(
     login: str,
     password: str,
     keyword: str,
@@ -225,29 +194,30 @@ def parse_results(data: dict) -> list[dict]:
         if not results:
             return []
 
-        clinics = []
+        businesses = []
         for item in results[0].get("items", []):
             if item.get("type") not in ("maps_search", "local_pack"):
                 continue
 
             rating = item.get("rating") or {}
             work_hours = item.get("work_hours") or {}
-            hours_str = _format_hours(work_hours.get("timetable", {}))
+            address = item.get("address") or ""
 
-            clinics.append({
-                "Nome": item.get("title", ""),
-                "Endereço": item.get("address", ""),
-                "Telefone": item.get("phone", ""),
-                "Avaliação": rating.get("value", ""),
-                "Nº Avaliações": rating.get("votes_count", ""),
-                "Site": item.get("domain", ""),
-                "Categoria": item.get("category", ""),
-                "Horários": hours_str,
+            businesses.append({
+                "Name": item.get("title", ""),
+                "Category": item.get("category", ""),
+                "Phone": item.get("phone", ""),
+                "Website": item.get("domain", ""),
+                "Rating": rating.get("value", ""),
+                "Reviews": rating.get("votes_count", ""),
+                "Address": address,
+                **_parse_br_address(address),
+                "Hours": _format_hours(work_hours.get("timetable", {})),
                 "Latitude": item.get("latitude", ""),
                 "Longitude": item.get("longitude", ""),
             })
 
-        return clinics
+        return businesses
 
     except (KeyError, IndexError, TypeError) as exc:
         console.print(f"[bold red]✗ Parse error:[/bold red] {exc}")
@@ -275,128 +245,43 @@ def _format_hours(timetable: dict) -> str:
     return " | ".join(parts)
 
 
-# ── mapping helpers ────────────────────────────────────────────────────────────
-
-
-def _nota_google(rating) -> str:
-    if not rating:
-        return ""
-    try:
-        r = float(rating)
-        if r >= 4.5:
-            return "RATING_5"
-        elif r >= 3.5:
-            return "RATING_4"
-        else:
-            return "RATING_3"
-    except (ValueError, TypeError):
-        return ""
-
-
-def _especialidade(category: str) -> str:
-    cat = category.lower()
-    if "dermatol" in cat or "estétic" in cat or "estetica" in cat:
-        return "DERMATOLOGIA_ESTETICA"
-    if "odontol" in cat or "dent" in cat:
-        return "ODONTOLOGIA_ESTETICA"
-    return "OUTRO"
-
-
-def _parse_phone(phone: str) -> tuple[str, str, str]:
-    if not phone:
-        return "", "", ""
-    phone = phone.strip()
-    for code, cc in PHONE_COUNTRY_CODES.items():
-        if phone.startswith(code):
-            return code, cc, phone[len(code):]
-    return "", "", phone
+# ── address parsing ────────────────────────────────────────────────────────────
 
 
 def _parse_br_address(address: str) -> dict:
-    result = {
-        "Address / Address 1": "",
-        "Address / Address 2": "",
-        "Address / City": "",
-        "Address / State": "",
-        "Address / Country": "Brazil",
-        "Address / Post Code": "",
-    }
+    """Split a Brazilian-format address line into its components.
+
+    Addresses in other formats are left unsplit; the full line is always
+    available in the "Address" column.
+    """
+    result = {"Street": "", "Complement": "", "City": "", "State": "", "Postal Code": ""}
     if not address:
         return result
 
     zip_match = re.search(r"(\d{5}-\d{3})", address)
     if zip_match:
-        result["Address / Post Code"] = zip_match.group(1)
+        result["Postal Code"] = zip_match.group(1)
 
     addr = re.sub(r",?\s*\d{5}-\d{3}", "", address).strip().rstrip(",").strip()
 
     state_match = re.search(r"\s*-\s*([A-Z]{2})\s*$", addr)
     if state_match:
-        result["Address / State"] = state_match.group(1)
+        result["State"] = state_match.group(1)
         addr = addr[: state_match.start()].strip()
 
     parts = addr.rsplit(",", 1)
     if len(parts) == 2:
-        result["Address / City"] = parts[1].strip()
+        result["City"] = parts[1].strip()
         addr = parts[0].strip()
 
     if " - " in addr:
         street, complement = addr.split(" - ", 1)
-        result["Address / Address 1"] = street.strip()
-        result["Address / Address 2"] = complement.strip()
+        result["Street"] = street.strip()
+        result["Complement"] = complement.strip()
     else:
-        result["Address / Address 1"] = addr
+        result["Street"] = addr
 
     return result
-
-
-def clinic_to_twenty_row(clinic: dict) -> dict:
-    now = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.000Z")
-    addr = _parse_br_address(clinic.get("Endereço", ""))
-    calling_code, country_code, phone_number = _parse_phone(clinic.get("Telefone", ""))
-    site = clinic.get("Site", "")
-
-    return {
-        "Account Owner (ID)": "",
-        **addr,
-        "ARR / Amount": "",
-        "ARR / Currency": "",
-        "Creation date": now,
-        "Domain Name / Link URL": site,
-        "Domain Name / Link Label": "",
-        "Domain Name / Secondary Links": "[]",
-        "Employees": "",
-        "Especialidade": _especialidade(clinic.get("Categoria", "")),
-        "Fit Markmedi": "",
-        "Google Business Profile / Link URL": "",
-        "Google Business Profile / Link Label": "",
-        "Google Business Profile / Secondary Links": "[]",
-        "Id": str(uuid.uuid4()),
-        "ICP": "",
-        "Instagram / Link URL": "",
-        "Instagram / Link Label": "",
-        "Instagram / Secondary Links": "[]",
-        "Linkedin / Link URL": "",
-        "Linkedin / Link Label": "",
-        "Linkedin / Secondary Links": "[]",
-        "Name": clinic.get("Nome", ""),
-        "N Avaliações Google": clinic.get("Nº Avaliações", ""),
-        "Nota Google": _nota_google(clinic.get("Avaliação", "")),
-        "Próxima Ação SS": "",
-        "Próximo contato": "",
-        "Score": "",
-        "Status Call": "",
-        "Tipo de operação": "",
-        "Last update": now,
-        "Whatsapp / Primary Phone Calling Code": calling_code,
-        "Whatsapp / Primary Phone Country Code": country_code,
-        "Whatsapp / Primary Phone Number": phone_number,
-        "Whatsapp / Additional Phones": "[]",
-        "Categoria": clinic.get("Categoria", ""),
-        "Horários": clinic.get("Horários", ""),
-        "Latitude": clinic.get("Latitude", ""),
-        "Longitude": clinic.get("Longitude", ""),
-    }
 
 
 # ── display ────────────────────────────────────────────────────────────────────
@@ -417,8 +302,8 @@ def _rating_color(rating) -> str:
         return "dim"
 
 
-def display_results(clinics: list[dict]) -> None:
-    if not clinics:
+def display_results(businesses: list[dict]) -> None:
+    if not businesses:
         console.print("\n[bold red]  ✗ No results found.[/bold red]\n")
         return
 
@@ -427,7 +312,7 @@ def display_results(clinics: list[dict]) -> None:
         show_lines=True,
         border_style="cyan",
         header_style="bold cyan",
-        title=f"[bold green]◉  {len(clinics)} result(s) found[/bold green]",
+        title=f"[bold green]◉  {len(businesses)} result(s) found[/bold green]",
         title_justify="left",
         padding=(0, 1),
     )
@@ -439,17 +324,17 @@ def display_results(clinics: list[dict]) -> None:
     table.add_column("Reviews", justify="right", style="green", min_width=7)
     table.add_column("Website", style="blue", max_width=26, no_wrap=True)
 
-    for i, c in enumerate(clinics, 1):
-        rating = c.get("Avaliação", "")
+    for i, b in enumerate(businesses, 1):
+        rating = b["Rating"]
         color = _rating_color(rating)
         table.add_row(
             str(i),
-            c.get("Nome", ""),
-            c.get("Endereço", ""),
-            c.get("Telefone", "") or "—",
+            b["Name"],
+            b["Address"],
+            b["Phone"] or "—",
             f"[{color}]{rating or '—'}[/{color}]",
-            str(c.get("Nº Avaliações", "") or "—"),
-            c.get("Site", "") or "—",
+            str(b["Reviews"] or "—"),
+            b["Website"] or "—",
         )
 
     console.print()
@@ -457,15 +342,14 @@ def display_results(clinics: list[dict]) -> None:
     console.print()
 
 
-def export_csv(clinics: list[dict], output_path: str) -> None:
-    rows = [clinic_to_twenty_row(c) for c in clinics]
+def export_csv(businesses: list[dict], output_path: str) -> None:
     with open(output_path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=TWENTY_CRM_COLUMNS)
+        writer = csv.DictWriter(f, fieldnames=CSV_COLUMNS)
         writer.writeheader()
-        writer.writerows(rows)
+        writer.writerows(businesses)
     console.print(
         Panel(
-            f"[bold green]✓ {len(clinics)} records exported[/bold green]\n\n"
+            f"[bold green]✓ {len(businesses)} records exported[/bold green]\n\n"
             f"  [dim]→[/dim]  [cyan]{output_path}[/cyan]",
             title="[bold]Export[/bold]",
             border_style="green",
@@ -475,6 +359,45 @@ def export_csv(clinics: list[dict], output_path: str) -> None:
     console.print()
 
 
+# ── location format ────────────────────────────────────────────────────────────
+
+BR_STATES = {
+    "AC": "Acre", "AL": "Alagoas", "AP": "Amapa", "AM": "Amazonas", "BA": "Bahia",
+    "CE": "Ceara", "DF": "Distrito Federal", "ES": "Espirito Santo", "GO": "Goias",
+    "MA": "Maranhao", "MT": "Mato Grosso", "MS": "Mato Grosso do Sul",
+    "MG": "Minas Gerais", "PA": "Para", "PB": "Paraiba", "PR": "Parana",
+    "PE": "Pernambuco", "PI": "Piaui", "RJ": "Rio de Janeiro",
+    "RN": "Rio Grande do Norte", "RS": "Rio Grande do Sul", "RO": "Rondonia",
+    "RR": "Roraima", "SC": "Santa Catarina", "SP": "Sao Paulo", "SE": "Sergipe",
+    "TO": "Tocantins",
+}
+
+
+def _strip_accents(text: str) -> str:
+    return "".join(
+        ch for ch in unicodedata.normalize("NFD", text) if not unicodedata.combining(ch)
+    )
+
+
+def build_location(city: str, state: str) -> str:
+    """Build a DataForSEO location name, e.g. 'Sao Paulo,State of Sao Paulo,Brazil'.
+
+    Accepts a state name with or without accents, or its two-letter abbreviation.
+    """
+    city = _strip_accents(city.strip())
+    state = _strip_accents(state.strip())
+    state = BR_STATES.get(state.upper(), state)
+
+    if state.lower() in ("distrito federal", "federal district"):
+        region = "Federal District"
+    elif state.lower().startswith("state of "):
+        region = state
+    else:
+        region = f"State of {state}"
+
+    return ",".join(part for part in (city, region, "Brazil") if part)
+
+
 # ── interactive setup ──────────────────────────────────────────────────────────
 
 
@@ -482,10 +405,11 @@ def interactive_setup() -> dict:
     console.print(Rule("[cyan]Nova Busca[/cyan]", style="cyan"))
     console.print()
 
-    keyword = Prompt.ask(
-        "  [cyan]Categoria / termo de busca[/cyan]",
-        default="clínicas de dermatologia estética",
-    )
+    keyword = ""
+    while not keyword:
+        keyword = Prompt.ask(
+            "  [cyan]Tipo de empresa / termo de busca[/cyan] [dim](ex.: academias)[/dim]"
+        ).strip()
     console.print()
 
     state = Prompt.ask("  [cyan]Estado[/cyan]", default="São Paulo")
@@ -509,7 +433,7 @@ def interactive_setup() -> dict:
     console.print()
     return {
         "keyword": keyword,
-        "location": f"{city},{state},Brazil",
+        "location": build_location(city, state),
         "city": city,
         "neighborhood": neighborhood or None,
         "radius": radius,
@@ -532,13 +456,13 @@ def main() -> None:
             "  python argos.py\n"
             "  python argos.py --keyword 'restaurantes' --location 'Rio de Janeiro,State of Rio de Janeiro,Brazil' --results 100\n"
             "  python argos.py --keyword 'academias' --neighborhood Pinheiros --results 50\n"
-            "  python argos.py --keyword 'odontologia estética' --results 50 --output clinicas.csv\n"
+            "  python argos.py --keyword 'pet shops' --results 50 --output petshops.csv\n"
         ),
     )
     parser.add_argument(
         "--keyword",
         default=None,
-        help="Search term",
+        help="Type of business to search for (e.g. 'academias')",
     )
     parser.add_argument(
         "--location",
@@ -580,13 +504,15 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    login, password = ensure_credentials()
-
     # ── interactive or CLI mode ────────────────────────────────────────────────
     cli_mode = any([args.keyword, args.location, args.neighborhood, args.results])
+    if cli_mode and not args.keyword:
+        parser.error("--keyword is required when passing search flags")
+
+    login, password = ensure_credentials()
 
     if cli_mode:
-        keyword = args.keyword or "clínicas de dermatologia estética"
+        keyword = args.keyword
         location = args.location or "Sao Paulo,State of Sao Paulo,Brazil"
         neighborhood = args.neighborhood
         radius = args.radius
@@ -631,7 +557,7 @@ def main() -> None:
 
     def _run_search() -> None:
         try:
-            result_holder["clinics"] = search_clinics(
+            result_holder["businesses"] = search_businesses(
                 login, password,
                 keyword, location, args.language,
                 results, coordinates, radius,
@@ -677,15 +603,15 @@ def main() -> None:
             console.print(f"\n[bold red]✗ Erro inesperado:[/bold red] {exc}")
         sys.exit(1)
 
-    clinics = result_holder.get("clinics", [])
+    businesses = result_holder.get("businesses", [])
 
     # ── results ────────────────────────────────────────────────────────────────
-    display_results(clinics)
+    display_results(businesses)
 
-    if not args.no_export and clinics:
+    if not args.no_export and businesses:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_path = args.output or f"resultados_{timestamp}.csv"
-        export_csv(clinics, output_path)
+        export_csv(businesses, output_path)
 
 
 if __name__ == "__main__":
